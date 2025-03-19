@@ -1,0 +1,5 @@
+models/
+
+# Ignore large files
+cb_venv/lib/python3.10/site-packages/numpy/.dylibs/libopenblas64_.0.dylib
+cb_venv/lib/python3.10/site-packages/torch/lib/libtorch_cpu.dylib
