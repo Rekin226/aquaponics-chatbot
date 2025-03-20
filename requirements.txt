@@ -1,7 +1,10 @@
 requests>=2.28.0
 beautifulsoup4>=4.11.0
 langchain>=0.0.267
-faiss-cpu>=1.7.4
+faiss-cpu>=1.7.4  # CPU version
+faiss-gpu>=1.7.4; platform_system != "Darwin"  # GPU version, except for MacOS
 sentence-transformers>=2.2.2
 huggingface-hub>=0.14.1
 lxml>=4.9.0
+langchain_community>=0.0.4
+torch>=2.2.0

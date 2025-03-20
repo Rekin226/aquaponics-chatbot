@@ -2,7 +2,7 @@
 """
 Aquaponics RAG Chatbot - A Retrieval-Augmented Generation pipeline 
 that answers questions about aquaponics using information from web documents.
-This version uses Llama-3-8B through the Ollama API.
+This version uses Llama-3-8B through the Ollama API with GPU acceleration.
 """
 
 import os
@@ -10,6 +10,7 @@ import sys
 import requests
 import re
 import json
+import torch
 from typing import List, Dict, Any, Optional, Union
 from bs4 import BeautifulSoup
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -91,10 +92,10 @@ class DataIngestion:
 
 class DocumentProcessor:
     """
-    Handles document splitting and embedding computation
+    Handles document splitting and embedding computation with configurable GPU/CPU support
     """
     
-    def __init__(self):
+    def __init__(self, force_cpu=False):
         # Initialize text splitter for chunking
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -102,9 +103,17 @@ class DocumentProcessor:
             length_function=len,
         )
         
-        # Initialize embeddings
+        # Check for GPU availability unless CPU is forced
+        self.device = "cpu" if force_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
+        if self.device == "cuda":
+            print("GPU acceleration enabled")
+        else:
+            print("Running on CPU" + (" (forced)" if force_cpu else " - GPU not detected"))
+        
+        # Initialize embeddings with device support
         self.embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': self.device}
         )
     
     def split_documents(self, documents: List[Dict[str, str]]) -> List[Document]:
@@ -118,9 +127,16 @@ class DocumentProcessor:
         return splits
     
     def create_faiss_index(self, documents: List[Document]) -> FAISS:
-        """Creates a FAISS index from document chunks."""
+        """Creates a FAISS index from document chunks with optional GPU acceleration."""
         print("Computing embeddings and creating FAISS index...")
-        vectorstore = FAISS.from_documents(documents, self.embeddings)
+        use_gpu = self.device == "cuda"
+        if use_gpu:
+            print("Using GPU acceleration for FAISS index creation")
+        vectorstore = FAISS.from_documents(
+            documents, 
+            self.embeddings,
+            gpu=use_gpu
+        )
         print("FAISS index created successfully")
         return vectorstore
     
@@ -253,10 +269,15 @@ class RAGChain:
 def main():
     """Main function that orchestrates the RAG pipeline."""
     
+    # Add command line argument parsing for CPU/GPU choice
+    force_cpu = "--cpu" in sys.argv
+    if force_cpu:
+        print("Forcing CPU mode due to --cpu flag")
+
     # Check if the FAISS index already exists
     if os.path.exists(FAISS_INDEX_PATH) and os.path.isdir(FAISS_INDEX_PATH):
         print("Found existing FAISS index. Loading...")
-        processor = DocumentProcessor()
+        processor = DocumentProcessor(force_cpu=force_cpu)
         vectorstore = processor.load_faiss_index(FAISS_INDEX_PATH)
     else:
         print("Building new FAISS index...")
@@ -274,7 +295,7 @@ def main():
                 documents.append({"url": url, "text": clean_text})
         
         # Step 3: Process documents and create embeddings
-        processor = DocumentProcessor()
+        processor = DocumentProcessor(force_cpu=force_cpu)
         doc_chunks = processor.split_documents(documents)
         
         # Step 4: Create and save FAISS index
